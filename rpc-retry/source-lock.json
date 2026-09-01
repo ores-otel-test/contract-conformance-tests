@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/ores-otel/ores-interfaces.git",
+  "commit": "42f1f1d2565ea2138568eced076c2a0dffe0b9d7",
+  "files": {
+    "contracts/rpc-retry/v1/buf.yaml": "68bee01965153246a6aecb1a81cf303865296a65fe24c64ba46ecfd50b9f4560",
+    "contracts/rpc-retry/v1/expected/retry.proto": "e434a0acf24ce1531a6f484d0409ee99adf9b8173e1d99806a172fe577f7acbb",
+    "contracts/rpc-retry/v1/expected/schema.json": "7f39023a768b6950da6241bb017180b68e7f33cf1adf755f3ac38131e6894287",
+    "contracts/rpc-retry/v1/generated/json-schema/RetryAttempt.json": "ba2b562b637b4a1654a2e6eac6876ec39c89523488fbf7c791bfc79f170cd183",
+    "contracts/rpc-retry/v1/generated/json-schema/RetryDecision.json": "e5e46fc5d25cc8be8ce53f6c6308f122576655026d1eda0383093aa956ab7304",
+    "contracts/rpc-retry/v1/generated/json-schema/RetryInput.json": "d67f11638e729a1ece5ba439518d1f18c0b8aa73772403f72c7c8e88e172aaac",
+    "contracts/rpc-retry/v1/generated/json-schema/RetryPolicy.json": "1f866dadd7fa06233dc29007f17ba70d02e4edc58a848ef9907904bf2abb55dd",
+    "contracts/rpc-retry/v1/generated/protobuf/ores/rpc/v1.proto": "e0393a9ee5076dc2c395c501f6e780cd3871ac93b8632e7d23b0fb31108ae98b",
+    "contracts/rpc-retry/v1/instances.json": "61badfa0cdba193f726240473df7151f05467b5b93b2893a48ebe25c0fcf25c0",
+    "contracts/rpc-retry/v1/main.tsp": "79e6c1fed42b116212ee01319765a1425d55fffde7d3400823bffdd1a335e144",
+    "contracts/rpc-retry/v1/package-lock.json": "214c70d13b9275b355e5066a742edc08eb29ab8e457dcaa581325dc81de1590e",
+    "contracts/rpc-retry/v1/package.json": "a4429b30996cf2af04b5ce14932d2f90d2da62a6d8a909ce0c97574b4255c2c7",
+    "contracts/rpc-retry/v1/tspconfig.yaml": "18ec4bfdf6dd7e114fdeba72190c2e2fed308081a577e5ccd1c05c9ed3d8496a"
+  }
+}
