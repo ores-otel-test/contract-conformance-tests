@@ -15,7 +15,9 @@ required = {
     ".zpkg.toml",
     "docs/test-strategy.md",
     "scripts/verify_repository.py",
+    "scripts/verify_rpc_retry_contract.mjs",
     ".github/workflows/deep-tests.yml",
+    "rpc-retry/source-lock.json",
     "src/deep_tests/__init__.py",
 }
 missing = sorted(path for path in required if not (ROOT / path).exists())
@@ -50,6 +52,12 @@ action_pattern = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
 actions = [line.split("uses:", 1)[1].strip() for line in workflow.splitlines() if "uses:" in line]
 if len(actions) < 2 or any(not action_pattern.fullmatch(action) for action in actions):
     raise SystemExit(f"workflow actions are not immutably pinned: {actions}")
+
+source_lock = json.loads((ROOT / "rpc-retry/source-lock.json").read_text(encoding="utf-8"))
+if f"          ref: {source_lock['commit']}" not in workflow:
+    raise SystemExit("workflow source checkout and source lock commit differ")
+if "          repository: ores-otel/ores-interfaces" not in workflow:
+    raise SystemExit("workflow does not check out the authoritative source repository")
 
 if metadata.get("bootstrap_operation") != "deep-test-fleet-20260808":
     raise SystemExit("bootstrap operation identity drift")
