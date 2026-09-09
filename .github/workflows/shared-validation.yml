@@ -1,0 +1,42 @@
+name: External shared validation
+on:
+  pull_request:
+    paths: ['validation/**', '.github/workflows/shared-validation.yml']
+  push:
+    branches: [main]
+    paths: ['validation/**', '.github/workflows/shared-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-runtimes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ores-otel/ores-lib-core
+          ref: 6ce47f202cef70112950b06af8c3c24abe7eb288
+          path: tmp/core
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ores-otel/ores-lib-core
+          ref: 5db0c66a85098fa3eff55d2df929d078999712e2
+          path: tmp/baseline
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+      - run: bash validation/run.sh
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: external-validation-${{ github.sha }}
+          path: tmp/evidence/
+          if-no-files-found: error
+          retention-days: 14

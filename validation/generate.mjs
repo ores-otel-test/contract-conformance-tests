@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cases, CORE_COMMIT, BASELINE_COMMIT } from './cases.mjs';
+const rows = cases();
+assert(rows.length > 3000);
+assert.equal(new Set(rows.map(row => row.id)).size, rows.length);
+const json = JSON.stringify(rows);
+const hex = value => Buffer.from(value, 'utf8').toString('hex');
+const tsv = rows.map(row => [row.id, row.kind, hex(row.input), row.kind === 'email' ? (row.expected === null ? '-' : hex(row.expected)) : (row.expected ? '1' : '0')].join('\t')).join('\n') + '\n';
+mkdirSync('tmp/generated', { recursive: true });
+writeFileSync('tmp/generated/cases.tsv', tsv);
+writeFileSync('tmp/generated/corpus.dart', `// Generated test data; not an interface authority.\nconst encodedCases = '${Buffer.from(json).toString('base64')}';\n`);
+const manifest = { schema: 'ores.external-validation-corpus/v1', coreCommit: CORE_COMMIT, baselineCommit: BASELINE_COMMIT, cases: rows.length, jsonSha256: createHash('sha256').update(json).digest('hex'), tsvSha256: createHash('sha256').update(tsv).digest('hex') };
+writeFileSync('tmp/generated/manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+console.log(JSON.stringify(manifest));
