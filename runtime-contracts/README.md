@@ -14,15 +14,20 @@ Current recertification pins:
 - Serde `1.0.228` + serde_json `1.0.145`
 - Dart SDK `3.13.3`
 
-The matrix covers JSON Schema integer semantics (`18`, `18.0`, `1.8e1` versus
-fractions/strings), exact unknown-field rejection, missing versus explicit null,
-Unicode code-point length boundaries with supplementary-plane emoji and combining
-marks, oneOf behavior and no implicit trimming/default insertion. Rust does not
-map JSON Schema `integer` directly to a language representation: its custom Serde
-deserializer deliberately accepts numerically integral JSON numbers such as
-`18.0` while rejecting `18.5` and strings. Optional non-null fields use a custom
-Serde deserializer so `missing` and `null` are not collapsed into the same
-`Option::None`. String limits count `chars()`, not UTF-8 bytes.
+The 65-case matrix covers JSON Schema integer semantics (`18`, `18.0`,
+`1.8e1`, `1e2` versus fractions, strings, booleans, negative and out-of-range
+numbers), exact unknown-field rejection, missing versus explicit null, Unicode
+code-point length boundaries with supplementary-plane emoji and combining marks,
+oneOf behavior, scalar rejection at union boundaries, and no implicit
+trimming/default insertion. It now exercises every declared string ceiling in
+this canary, including 4,096-code-point problem details and both request/trace
+identifier boundaries.
+
+Rust does not map JSON Schema `integer` directly to a language representation:
+its custom Serde deserializer deliberately accepts numerically integral JSON
+numbers such as `18.0` while rejecting `18.5` and strings. Optional non-null
+fields use a custom Serde deserializer so `missing` and `null` are not collapsed
+into the same `Option::None`. String limits count `chars()`, not UTF-8 bytes.
 
 The TypeScript adapter uses strict Zod objects and a contract-derived code-point
 string helper rather than assuming a library default has JSON Schema length
@@ -33,17 +38,30 @@ input semantically: no trim, normalization, default insertion or key dropping.
 After all adapters execute, `verifyRuntimeEvidenceAgainstCurrentInputs()` binds
 the evidence to the freshly verified Contract IR, parity receipt run ID, current
 TypeSpec/generated/authored source inputs and trusted runtime corpus digest. The
-suite also requires TJSV to stop evaluation for a flipped verdict, missing
-adapter, stale IR id, wrong corpus digest, duplicate case, failed adapter and a
-temporarily drifted authored schema. The drifted source is restored and a final
-positive admission must recover before CI can pass.
+suite requires TJSV to stop evaluation for 22 independent tamper/refusal probes,
+including:
+
+- verdict divergence, missing/extra/duplicate cases, wrong declaration identity,
+  and `error`/`skipped`/`unsupported` case outcomes;
+- missing, failed, skipped, duplicated, wrong-language and wrong-validator
+  adapters;
+- stale Contract IR, wrong parity input digest, wrong corpus digest, malformed
+  digest syntax, wrong evidence schema and unexpected envelope fields;
+- an empty adapter set; and
+- a temporarily drifted current authored schema.
+
+Each stable refusal probe asserts the specific TJSV rule class rather than only
+checking for a generic nonzero finding count. The authored-schema drift is then
+restored and the original positive evidence must recover before CI can pass.
+This verifies that fail-closed admission is both sensitive to current authority
+bytes and reversible after the trusted source is restored.
 
 The earlier DEN-3958 run remains historical evidence against the prior reviewed
-TJSV/source pair. This DEN-3959 recertification advances only immutable source and
-validator pins to the pair used by the central `ORESoftware/ores-interfaces`
-consumer; the runtime cases and validators are intentionally unchanged so the
-comparison detects toolchain-induced decision drift rather than changing both
-sides of the experiment at once.
+TJSV/source pair. DEN-3959 advanced immutable source and validator pins to the
+pair used by the central `ORESoftware/ores-interfaces` consumer; later test-only
+slices expand the independently maintained runtime corpus and refusal matrix
+without changing those authority/tool pins. This separation makes runtime or
+admission drift visible instead of changing producer, consumer and tests at once.
 
 This remains finite regression evidence. It does not certify every Zod/Serde
 usage in the fleet, every custom predicate, browser UI behavior, authorization,
