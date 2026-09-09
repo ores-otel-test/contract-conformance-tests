@@ -1,0 +1,80 @@
+name: TJSV Zod Serde Dart runtime conformance
+
+on:
+  pull_request:
+    paths:
+      - 'runtime-contracts/**'
+      - '.github/workflows/tjsv-runtime-conformance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime-contracts/**'
+      - '.github/workflows/tjsv-runtime-conformance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact test head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-otel/ores-interfaces
+          ref: acfb017bc624471767862866d62c1088ffb43c59
+          path: tmp/interfaces
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 2281843126ab644607b11cf8281d84f382d68dfc
+          path: tmp/tjsv
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: '3.13.3'
+      - name: Install pinned contract toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix tmp/tjsv
+          mkdir -p tmp/zod tmp/evidence
+          npm install --prefix tmp/zod --no-save --ignore-scripts --no-audit --no-fund zod@4.5.4
+          node -e "const p=require('./tmp/zod/node_modules/zod/package.json'); if(p.version!=='4.5.4') process.exit(2)"
+          {
+            node --version
+            npm --version
+            rustc --version
+            cargo --version
+            dart --version
+          } > tmp/evidence/toolchains.txt 2>&1
+      - name: Run TJSV-bound runtime adapter matrix
+        run: node runtime-contracts/run.mjs
+      - name: Preserve all tracked inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code HEAD
+          git -C tmp/interfaces diff --exit-code HEAD
+          git -C tmp/tjsv diff --exit-code HEAD
+      - name: Retain positive and fail-closed evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: tjsv-runtime-conformance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/evidence/
+          if-no-files-found: error
+          retention-days: 14
