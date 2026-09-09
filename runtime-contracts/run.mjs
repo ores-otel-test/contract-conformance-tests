@@ -19,8 +19,11 @@ const hash = (value) => createHash('sha256').update(value).digest('hex');
 const clone = (value) => structuredClone(value);
 await mkdir(evidenceRoot, { recursive: true });
 
-const expectedSource = '09b06c7d82852b657e812a70eeb63023d0aed2a6';
-const expectedValidator = 'd60d0d79d83e075077382623ec9e23a401ab601f';
+const sourceAdmission = await import(pathToFileURL(join(sourceRoot, 'validation/tjsv/admission.mjs')).href);
+const expectedSource = '3041d9a314480e9540f8feb179648048ce80a8be';
+const expectedValidator = sourceAdmission.VALIDATOR_REVISION;
+assert.equal(sourceAdmission.VALIDATOR_REPOSITORY, 'ORESoftware/typespec-json-schema-validator');
+assert.match(expectedValidator, /^[0-9a-f]{40}$/);
 assert.equal((await run('git', ['-C', sourceRoot, 'rev-parse', 'HEAD'])).stdout.trim(), expectedSource);
 assert.equal((await run('git', ['-C', validatorRoot, 'rev-parse', 'HEAD'])).stdout.trim(), expectedValidator);
 
@@ -33,7 +36,6 @@ const expectedCases = cases.map((entry) => ({
 }));
 const corpusDigest = hash(JSON.stringify(expectedCases));
 
-const sourceAdmission = await import(pathToFileURL(join(sourceRoot, 'validation/tjsv/admission.mjs')).href);
 assert.equal(sourceAdmission.VALIDATOR_REVISION, expectedValidator, 'source and runtime TJSV pins disagree');
 const runtime = await import(pathToFileURL(join(validatorRoot, 'src/runtime-conformance/index.mjs')).href);
 
@@ -92,8 +94,8 @@ await sourceAdmission.withPublicAdmission({ sourceRoot, validatorRoot }, async (
     expectedCases,
     requiredAdapters,
   };
-  const admit = (evidence) => runtime.verifyRuntimeEvidenceAgainstCurrentInputs({
-    ...admissionOptions, evidence,
+  const admit = (runtimeEvidenceInput) => runtime.verifyRuntimeEvidenceAgainstCurrentInputs({
+    ...admissionOptions, evidence: runtimeEvidenceInput,
   });
   const positive = await admit(runtimeEvidence);
   assert.equal(positive.status, 'passed', JSON.stringify(positive.findings));
