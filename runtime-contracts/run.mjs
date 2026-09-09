@@ -19,8 +19,8 @@ const hash = (value) => createHash('sha256').update(value).digest('hex');
 const clone = (value) => structuredClone(value);
 await mkdir(evidenceRoot, { recursive: true });
 
-const expectedSource = 'acfb017bc624471767862866d62c1088ffb43c59';
-const expectedValidator = '2281843126ab644607b11cf8281d84f382d68dfc';
+const expectedSource = '09b06c7d82852b657e812a70eeb63023d0aed2a6';
+const expectedValidator = 'd60d0d79d83e075077382623ec9e23a401ab601f';
 assert.equal((await run('git', ['-C', sourceRoot, 'rev-parse', 'HEAD'])).stdout.trim(), expectedSource);
 assert.equal((await run('git', ['-C', validatorRoot, 'rev-parse', 'HEAD'])).stdout.trim(), expectedValidator);
 
