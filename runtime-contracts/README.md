@@ -1,4 +1,4 @@
-# TJSV runtime conformance across Zod, Serde and Dart — DEN-3958
+# TJSV runtime conformance across Zod, Serde and Dart — DEN-3958 / DEN-3959
 
 This test-org lane closes a gap left explicit by the earlier `validation/` suite:
 it executes real runtime validators and then asks
@@ -6,10 +6,10 @@ it executes real runtime validators and then asks
 decision. TypeSpec and independently authored Draft 2020-12 JSON Schema remain
 the peer authorities; runtime receipts are downstream execution evidence only.
 
-Pinned inputs:
+Current recertification pins:
 
-- `ores-otel/ores-interfaces@acfb017bc624471767862866d62c1088ffb43c59`
-- `ORESoftware/typespec-json-schema-validator@2281843126ab644607b11cf8281d84f382d68dfc`
+- `ores-otel/ores-interfaces@09b06c7d82852b657e812a70eeb63023d0aed2a6`
+- `ORESoftware/typespec-json-schema-validator@d60d0d79d83e075077382623ec9e23a401ab601f`
 - Zod `4.5.4`
 - Serde `1.0.228` + serde_json `1.0.145`
 - Dart SDK `3.13.3`
@@ -37,6 +37,13 @@ suite also requires TJSV to stop evaluation for a flipped verdict, missing
 adapter, stale IR id, wrong corpus digest, duplicate case, failed adapter and a
 temporarily drifted authored schema. The drifted source is restored and a final
 positive admission must recover before CI can pass.
+
+The earlier DEN-3958 run remains historical evidence against the prior reviewed
+TJSV/source pair. This DEN-3959 recertification advances only immutable source and
+validator pins to the pair used by the central `ORESoftware/ores-interfaces`
+consumer; the runtime cases and validators are intentionally unchanged so the
+comparison detects toolchain-induced decision drift rather than changing both
+sides of the experiment at once.
 
 This remains finite regression evidence. It does not certify every Zod/Serde
 usage in the fleet, every custom predicate, browser UI behavior, authorization,
