@@ -15,9 +15,6 @@ on:
 permissions:
   contents: read
 
-env:
-  TJSV_REVISION: 85a0cd9a7dc113c6cdbb473f3b60786d032d8513
-
 jobs:
   runtime-conformance:
     runs-on: ubuntu-24.04
@@ -34,20 +31,38 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ores-otel/ores-interfaces
-          ref: 09b06c7d82852b657e812a70eeb63023d0aed2a6
+          ref: 3041d9a314480e9540f8feb179648048ce80a8be
           path: tmp/interfaces
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/typespec-json-schema-validator
-          ref: ${{ env.TJSV_REVISION }}
-          path: tmp/tjsv
-          persist-credentials: false
-      - name: Verify exact TJSV source revision
+      - name: Validate the interface-owned TJSV source lock
+        id: source-lock
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C tmp/tjsv rev-parse HEAD)" = "$TJSV_REVISION"
+          test "$(git -C tmp/interfaces rev-parse HEAD)" = '3041d9a314480e9540f8feb179648048ce80a8be'
+          node <<'NODE'
+          const fs = require('node:fs');
+          const lock = JSON.parse(fs.readFileSync('tmp/interfaces/validation/tjsv/source-lock.json', 'utf8'));
+          if (JSON.stringify(Object.keys(lock).sort()) !== JSON.stringify(['repository', 'revision', 'schema'])) process.exit(2);
+          if (lock.schema !== 'ores.tjsv-source-lock/v1') process.exit(2);
+          if (lock.repository !== 'ORESoftware/typespec-json-schema-validator') process.exit(2);
+          if (!/^[0-9a-f]{40}$/.test(lock.revision)) process.exit(2);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `repository=${lock.repository}\nrevision=${lock.revision}\n`);
+          NODE
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ steps.source-lock.outputs.repository }}
+          ref: ${{ steps.source-lock.outputs.revision }}
+          path: tmp/tjsv
+          persist-credentials: false
+      - name: Verify exact TJSV source revision
+        env:
+          EXPECTED_TJSV: ${{ steps.source-lock.outputs.revision }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C tmp/tjsv rev-parse HEAD)" = "$EXPECTED_TJSV"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.16.0'
@@ -55,6 +70,8 @@ jobs:
         with:
           sdk: '3.13.3'
       - name: Install pinned contract toolchains
+        env:
+          TJSV_REVISION: ${{ steps.source-lock.outputs.revision }}
         shell: bash
         run: |
           set -euo pipefail
