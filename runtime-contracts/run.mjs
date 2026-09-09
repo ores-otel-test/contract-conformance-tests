@@ -101,26 +101,111 @@ await sourceAdmission.withPublicAdmission({ sourceRoot, validatorRoot }, async (
   assert.equal(positive.summary.passedAdapters, 4);
   await writeFile(join(evidenceRoot, 'runtime-conformance.json'), `${JSON.stringify(positive, null, 2)}\n`);
 
-  const stopped = async (name, mutated) => {
+  const stopped = async (name, mutated, expectedRuleIds = []) => {
     const report = await admit(mutated);
     assert.equal(report.status, 'stopped_for_evaluation', `${name} did not fail closed`);
     assert.ok(report.findingCount > 0, `${name} stopped without findings`);
-    return { name, findingCount: report.findingCount, rules: [...new Set(report.findings.map((f) => f.ruleId))].sort() };
+    const rules = [...new Set(report.findings.map((f) => f.ruleId))].sort();
+    for (const ruleId of expectedRuleIds) {
+      assert.ok(rules.includes(ruleId), `${name} did not report ${ruleId}: ${rules.join(', ')}`);
+    }
+    return { name, findingCount: report.findingCount, rules };
   };
   const negative = [];
+
   const flipped = clone(runtimeEvidence);
   flipped.adapters[0].results[0].verdict = flipped.adapters[0].results[0].verdict === 'accepted' ? 'rejected' : 'accepted';
-  negative.push(await stopped('flipped-verdict', flipped));
-  const missing = clone(runtimeEvidence); missing.adapters.pop();
-  negative.push(await stopped('missing-adapter', missing));
-  const staleIr = clone(runtimeEvidence); staleIr.contractIrId = '0'.repeat(64);
-  negative.push(await stopped('stale-ir', staleIr));
-  const wrongCorpus = clone(runtimeEvidence); wrongCorpus.corpusDigest = 'f'.repeat(64);
-  negative.push(await stopped('wrong-corpus', wrongCorpus));
-  const duplicate = clone(runtimeEvidence); duplicate.adapters[1].results.push(clone(duplicate.adapters[1].results[0]));
-  negative.push(await stopped('duplicate-case', duplicate));
-  const failed = clone(runtimeEvidence); failed.adapters[2].status = 'failed';
-  negative.push(await stopped('failed-adapter', failed));
+  negative.push(await stopped('flipped-verdict', flipped,
+    ['runtime-adapter-verdict-divergence', 'runtime-case-verdict-mismatch']));
+
+  const missingAdapter = clone(runtimeEvidence);
+  missingAdapter.adapters.pop();
+  negative.push(await stopped('missing-adapter', missingAdapter, ['runtime-required-adapter-missing']));
+
+  const staleIr = clone(runtimeEvidence);
+  staleIr.contractIrId = '0'.repeat(64);
+  negative.push(await stopped('stale-ir', staleIr, ['runtime-contract-ir-id-mismatch']));
+
+  const wrongInput = clone(runtimeEvidence);
+  wrongInput.inputDigest = '1'.repeat(64);
+  negative.push(await stopped('wrong-input-digest', wrongInput, ['runtime-input-digest-mismatch']));
+
+  const wrongCorpus = clone(runtimeEvidence);
+  wrongCorpus.corpusDigest = 'f'.repeat(64);
+  negative.push(await stopped('wrong-corpus', wrongCorpus, ['runtime-corpus-digest-mismatch']));
+
+  const duplicateCase = clone(runtimeEvidence);
+  duplicateCase.adapters[1].results.push(clone(duplicateCase.adapters[1].results[0]));
+  negative.push(await stopped('duplicate-case', duplicateCase, ['runtime-result-duplicate']));
+
+  const failedAdapter = clone(runtimeEvidence);
+  failedAdapter.adapters[2].status = 'failed';
+  negative.push(await stopped('failed-adapter', failedAdapter, ['runtime-adapter-failed']));
+
+  const skippedAdapter = clone(runtimeEvidence);
+  skippedAdapter.adapters[3].status = 'skipped';
+  negative.push(await stopped('skipped-adapter', skippedAdapter, ['runtime-adapter-not-executed']));
+
+  const duplicateAdapter = clone(runtimeEvidence);
+  duplicateAdapter.adapters.push(clone(duplicateAdapter.adapters[0]));
+  negative.push(await stopped('duplicate-adapter', duplicateAdapter, ['runtime-adapter-duplicate']));
+
+  const wrongLanguage = clone(runtimeEvidence);
+  wrongLanguage.adapters[0].language = 'javascript';
+  negative.push(await stopped('wrong-adapter-language', wrongLanguage,
+    ['runtime-required-adapter-identity-mismatch']));
+
+  const wrongValidator = clone(runtimeEvidence);
+  wrongValidator.adapters[0].validator = 'zod@4.5.5';
+  negative.push(await stopped('wrong-adapter-validator', wrongValidator,
+    ['runtime-required-adapter-identity-mismatch']));
+
+  const missingCase = clone(runtimeEvidence);
+  missingCase.adapters[0].results.shift();
+  negative.push(await stopped('missing-case', missingCase, ['runtime-case-missing']));
+
+  const extraCase = clone(runtimeEvidence);
+  extraCase.adapters[0].results.push({
+    caseId: 'request.synthetic-extra', declaration: 'Ores.Validation.RequestMeta', verdict: 'rejected',
+  });
+  negative.push(await stopped('extra-case', extraCase, ['runtime-case-extra']));
+
+  const wrongDeclaration = clone(runtimeEvidence);
+  wrongDeclaration.adapters[0].results[0].declaration = 'Ores.Validation.PageQuery';
+  negative.push(await stopped('wrong-case-declaration', wrongDeclaration,
+    ['runtime-case-declaration-mismatch']));
+
+  const erroredCase = clone(runtimeEvidence);
+  erroredCase.adapters[0].results[0].verdict = 'error';
+  negative.push(await stopped('errored-case', erroredCase, ['runtime-case-error']));
+
+  const skippedCase = clone(runtimeEvidence);
+  skippedCase.adapters[0].results[0].verdict = 'skipped';
+  negative.push(await stopped('skipped-case', skippedCase, ['runtime-case-not-executed']));
+
+  const unsupportedCase = clone(runtimeEvidence);
+  unsupportedCase.adapters[0].results[0].verdict = 'unsupported';
+  negative.push(await stopped('unsupported-case', unsupportedCase, ['runtime-case-not-executed']));
+
+  const wrongEvidenceSchema = clone(runtimeEvidence);
+  wrongEvidenceSchema.schema = 'ores.typespec-json-schema-validator.runtime-evidence/v0';
+  negative.push(await stopped('wrong-evidence-schema', wrongEvidenceSchema,
+    ['runtime-evidence-schema-mismatch']));
+
+  const invalidDigest = clone(runtimeEvidence);
+  invalidDigest.contractIrId = 'A'.repeat(64);
+  negative.push(await stopped('invalid-contract-ir-digest', invalidDigest,
+    ['runtime-evidence-invalid-digest']));
+
+  const extraEnvelopeField = clone(runtimeEvidence);
+  extraEnvelopeField.unexpected = 'must-not-be-admitted';
+  negative.push(await stopped('unexpected-evidence-field', extraEnvelopeField,
+    ['runtime-evidence-fields-invalid']));
+
+  const emptyAdapters = clone(runtimeEvidence);
+  emptyAdapters.adapters = [];
+  negative.push(await stopped('empty-adapter-set', emptyAdapters,
+    ['runtime-evidence-adapters-empty', 'runtime-required-adapter-missing']));
 
   const authoredPath = contract.paths.authoredSchema;
   const originalAuthored = await readFile(authoredPath, 'utf8');
@@ -142,7 +227,7 @@ await sourceAdmission.withPublicAdmission({ sourceRoot, validatorRoot }, async (
     contractIrId: contract.contractIr.irId, parityRunId: contract.report.runId,
     corpusDigest, negativeChecks: negative,
     dartToolchain: dartVersion,
-    scope: 'TJSV-bound Zod, Serde and Dart verdict parity plus no-transform assertions',
+    scope: 'TJSV-bound Zod, Serde and Dart verdict parity, boundary corpus, no-transform assertions, and runtime-evidence tamper refusal',
   };
   await writeFile(join(evidenceRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
 });
