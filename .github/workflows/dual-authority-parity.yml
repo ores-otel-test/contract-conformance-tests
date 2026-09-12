@@ -15,15 +15,24 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: otel-test-dual-authority-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TJSV_SHA: 93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+  EXPECTED_DECLARATIONS: '["Ores.TestDualAuthority.DualAuthorityContract"]'
+
 jobs:
   parity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          show-progress: false
       - name: Verify exact test head
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -31,18 +40,20 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.16.0'
+          package-manager-cache: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/typespec-json-schema-validator
-          ref: 93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+          ref: ${{ env.TJSV_SHA }}
           path: tmp/tjsv
           persist-credentials: false
+          show-progress: false
       - name: Install pinned TJSV toolchain
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C tmp/tjsv rev-parse HEAD)" = '93dd73cb246a09b0a1c62d7192cc62ca6ecbe405'
-          npm ci --prefix tmp/tjsv --omit=dev
+          test "$(git -C tmp/tjsv rev-parse HEAD)" = "$TJSV_SHA"
+          npm ci --prefix tmp/tjsv --omit=dev --no-audit --no-fund
       - name: Prove positive peer-authority convergence
         shell: bash
         run: |
@@ -59,17 +70,63 @@ jobs:
             --quiet
           test -s tmp/dual-authority/positive/generated/typespec.generated.schema.json
           test -s tmp/dual-authority/positive/contract-ir.json
-          node <<'NODE'
-          const fs = require('node:fs');
-          const authored = JSON.parse(fs.readFileSync('dual-authority/authored.schema.json', 'utf8'));
-          const generated = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/generated/typespec.generated.schema.json', 'utf8'));
-          const report = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/report.json', 'utf8'));
-          const contractIr = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/contract-ir.json', 'utf8'));
-          if (authored.$schema !== 'https://json-schema.org/draft/2020-12/schema') process.exit(2);
-          if (!generated || typeof generated !== 'object' || Array.isArray(generated)) process.exit(2);
-          if (report.status !== 'passed') process.exit(2);
-          if (contractIr.status !== 'passed' || contractIr.admissible !== true) process.exit(2);
-          NODE
+          jq -e '
+            .schema == "ores.typespec-json-schema-validator.report/v1" and
+            .status == "passed" and
+            .zeroUnexplainedFindings == true and
+            .authorities.precedence == "none" and
+            .authorities.typespec.authority == "independently-authored" and
+            .authorities.jsonSchema.authority == "independently-authored" and
+            .authorities.typespec.generatedJsonSchemaRole == "comparison-evidence-only" and
+            .coverage.typespecGeneratedJsonSchemaComparison == true and
+            .coverage.differentialInstanceValidation == true and
+            (.differential.summary.divergences // 0) == 0 and
+            (.differential.summary.refusals // 0) == 0
+          ' tmp/dual-authority/positive/report.json
+          jq -e '
+            .schema == "ores.typespec-json-schema-validator.contract-ir/v1" and
+            .status == "passed" and
+            .admissible == true and
+            .role == "downstream-derived-parity-artifact" and
+            .editableAuthority == false
+          ' tmp/dual-authority/positive/contract-ir.json
+
+      - name: Reverify complete current Contract IR scope
+        uses: ORESoftware/typespec-json-schema-validator/actions/verify-contract-ir@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        with:
+          contract_ir: tmp/dual-authority/positive/contract-ir.json
+          report: tmp/dual-authority/positive/report.json
+          typespec: dual-authority/main.tsp
+          schema: dual-authority/authored.schema.json
+          generated_schema: tmp/dual-authority/positive/generated/typespec.generated.schema.json
+          expected_declarations: ${{ env.EXPECTED_DECLARATIONS }}
+          verification: tmp/dual-authority/positive/consumer-verification.json
+
+      - name: Prove altered and incomplete consumer evidence is rejected
+        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        with:
+          contract_ir: tmp/dual-authority/positive/contract-ir.json
+          report: tmp/dual-authority/positive/report.json
+          typespec: dual-authority/main.tsp
+          schema: dual-authority/authored.schema.json
+          generated_schema: tmp/dual-authority/positive/generated/typespec.generated.schema.json
+          expected_declarations: ${{ env.EXPECTED_DECLARATIONS }}
+          verification: tmp/dual-authority/positive/consumer-regression-verification.json
+
+      - name: Require exact consumer receipt binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --argjson expected "$EXPECTED_DECLARATIONS" '
+            .schema == "ores.typespec-json-schema-validator.consumer-verification-receipt/v1" and
+            .status == "passed" and
+            .admissible == true and
+            .failureCode == null and
+            ((.declarationIds | sort) == ($expected | sort))
+          ' tmp/dual-authority/positive/consumer-verification.json
+          jq -e '.status == "passed" and .admissible == true' \
+            tmp/dual-authority/positive/consumer-regression-verification.json
+
       - name: Prove either authored authority drifting alone fails closed
         shell: bash
         run: |
@@ -121,9 +178,7 @@ jobs:
           NODE
           }
 
-          # TJSV negative control: TypeSpec-only drift-rejection.
           expect_parity_stop typespec-drift tmp/typespec-drift.tsp dual-authority/authored.schema.json
-          # TJSV negative control: JSON-Schema-only drift-rejection.
           expect_parity_stop json-schema-drift dual-authority/main.tsp tmp/schema-drift.json
       - name: Prove Schema B remains comparison evidence outside authored tree
         shell: bash
@@ -136,12 +191,17 @@ jobs:
           test -s tmp/dual-authority/json-schema-drift/generated/typespec.generated.schema.json
       - name: Preserve authored inputs
         shell: bash
-        run: git diff --exit-code HEAD -- dual-authority
+        run: |
+          set -euo pipefail
+          git diff --exit-code HEAD -- dual-authority
+          git diff --check
       - name: Retain parity evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dual-authority-parity-${{ github.event.pull_request.head.sha || github.sha }}
           path: tmp/dual-authority/
-          if-no-files-found: error
-          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
