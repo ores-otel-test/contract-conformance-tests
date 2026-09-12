@@ -9,9 +9,13 @@ assert.ok(runtimeRoot, 'ORES_OTEL_RUNTIME is required');
 const api = await import(pathToFileURL(join(runtimeRoot, 'dist/config.js')).href);
 const { parseOresOtelToml, resolveOresOtelConfig, resolveOresOtelExporterEndpoint } = api;
 const source = await readFile('otel-peer-authority/.ores-otel.toml', 'utf8');
+const expectedInstance = JSON.parse(
+  await readFile('otel-peer-authority/instances/OtelPolicyCanary/valid/repository.json', 'utf8'),
+);
 const parsed = parseOresOtelToml(source);
-const resolved = resolveOresOtelConfig(parsed, { role: 'server', env: {} });
+assert.deepEqual(parsed, expectedInstance, 'canonical runtime parse must equal the admitted JSON instance');
 
+const resolved = resolveOresOtelConfig(parsed, { role: 'server', env: {} });
 assert.equal(resolved.role, 'server');
 assert.equal(resolved.serviceName, 'otel-peer-canary');
 assert.equal(resolved.tracing.sampleRatio, 0.25);
@@ -32,6 +36,7 @@ assert.throws(
 );
 
 console.log(JSON.stringify({
+  parsedMatchesAdmittedInstance: true,
   role: resolved.role,
   serviceName: resolved.serviceName,
   sampleRatio: resolved.tracing.sampleRatio,
