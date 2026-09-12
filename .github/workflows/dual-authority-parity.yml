@@ -1,0 +1,127 @@
+name: TypeSpec JSON Schema dual-authority parity
+
+on:
+  pull_request:
+    paths:
+      - 'dual-authority/**'
+      - '.github/workflows/dual-authority-parity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dual-authority/**'
+      - '.github/workflows/dual-authority-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact test head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+          path: tmp/tjsv
+          persist-credentials: false
+      - name: Install pinned TJSV toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C tmp/tjsv rev-parse HEAD)" = '93dd73cb246a09b0a1c62d7192cc62ca6ecbe405'
+          npm ci --prefix tmp/tjsv --omit=dev
+      - name: Prove positive peer-authority convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/dual-authority/positive/generated
+          node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec=dual-authority/main.tsp \
+            --schema=dual-authority/authored.schema.json \
+            --output-dir=tmp/dual-authority/positive/generated \
+            --bundle-id=typespec.generated.schema.json \
+            --report=tmp/dual-authority/positive/report.json \
+            --sarif=tmp/dual-authority/positive/report.sarif \
+            --contract-ir=tmp/dual-authority/positive/contract-ir.json \
+            --quiet
+          test -s tmp/dual-authority/positive/generated/typespec.generated.schema.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const authored = JSON.parse(fs.readFileSync('dual-authority/authored.schema.json', 'utf8'));
+          const generated = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/generated/typespec.generated.schema.json', 'utf8'));
+          const report = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/report.json', 'utf8'));
+          if (authored.$schema !== 'https://json-schema.org/draft/2020-12/schema') process.exit(2);
+          if (!generated || typeof generated !== 'object' || Array.isArray(generated)) process.exit(2);
+          if (report.status !== 'passed') process.exit(2);
+          NODE
+      - name: Prove either authored authority drifting alone fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp dual-authority/main.tsp tmp/typespec-drift.tsp
+          cp dual-authority/authored.schema.json tmp/schema-drift.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const tsp = fs.readFileSync('tmp/typespec-drift.tsp', 'utf8');
+          const needle = '  promotionPolicy: string;\n';
+          if (!tsp.includes(needle)) process.exit(3);
+          fs.writeFileSync('tmp/typespec-drift.tsp', tsp.replace(needle, `${needle}  testOnlyTypeSpecField: string;\n`));
+          const schema = JSON.parse(fs.readFileSync('tmp/schema-drift.json', 'utf8'));
+          schema.$defs.DualAuthorityContract.properties.testOnlyJsonSchemaField = { type: 'string' };
+          schema.$defs.DualAuthorityContract.required.push('testOnlyJsonSchemaField');
+          fs.writeFileSync('tmp/schema-drift.json', `${JSON.stringify(schema, null, 2)}\n`);
+          NODE
+
+          expect_parity_stop() {
+            local name="$1"
+            local typespec="$2"
+            local schema="$3"
+            local root="tmp/dual-authority/$name"
+            mkdir -p "$root/generated"
+            set +e
+            node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \
+              --typespec="$typespec" \
+              --schema="$schema" \
+              --output-dir="$root/generated" \
+              --bundle-id=typespec.generated.schema.json \
+              --report="$root/report.json" \
+              --sarif="$root/report.sarif" \
+              --contract-ir="$root/contract-ir.json" \
+              --quiet
+            status=$?
+            set -e
+            test "$status" -eq 2
+            node - "$root/report.json" <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (report.status !== 'stopped_for_evaluation') process.exit(2);
+          if (!Array.isArray(report.findings) || report.findings.length === 0) process.exit(2);
+          NODE
+          }
+
+          expect_parity_stop typespec-drift tmp/typespec-drift.tsp dual-authority/authored.schema.json
+          expect_parity_stop json-schema-drift dual-authority/main.tsp tmp/schema-drift.json
+      - name: Preserve authored inputs
+        shell: bash
+        run: git diff --exit-code HEAD
+      - name: Retain parity evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dual-authority-parity-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/dual-authority/
+          if-no-files-found: error
+          retention-days: 14
