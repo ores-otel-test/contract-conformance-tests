@@ -40,20 +40,6 @@ jobs:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
-      - name: Convert TOML fixture to the admitted JSON instance
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json, tomllib
-          from pathlib import Path
-          with Path('otel-peer-authority/.ores-otel.toml').open('rb') as f:
-              value = tomllib.load(f)
-          expected = json.loads(Path('otel-peer-authority/instances/OtelPolicyCanary/valid/repository.json').read_text())
-          if value != expected:
-              raise SystemExit('TOML fixture and admitted JSON instance diverged')
-          PY
-
       - name: Transpile TypeSpec to Schema B and compare with authored Schema A
         uses: ORESoftware/typespec-json-schema-validator@5bab34e08856c47af3600adf40a4aa860fa71c01
         with:
@@ -91,7 +77,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npx tsc -p tsconfig.build.json
 
-      - name: Execute the tracked .ores-otel.toml through the canonical runtime
+      - name: Parse tracked TOML, compare admitted JSON, and execute runtime config
         run: node otel-peer-authority/runtime-canary.mjs
 
       - name: Prove all source authorities and fixtures stayed read-only
