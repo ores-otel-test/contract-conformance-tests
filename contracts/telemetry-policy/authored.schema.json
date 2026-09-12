@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ores-otel-test/contract-conformance-tests/contracts/telemetry-policy/authored.schema.json",
+  "$defs": {
+    "TelemetryPolicyV1": {
+      "$id": "TelemetryPolicyV1",
+      "type": "object",
+      "properties": {
+        "version": { "type": "integer", "minimum": 1, "maximum": 1 },
+        "service": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sample_per_mille": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "export_timeout_ms": { "type": "integer", "minimum": 100, "maximum": 60000 },
+        "redact_payloads": { "type": "boolean" }
+      },
+      "required": ["version", "service", "sample_per_mille", "export_timeout_ms", "redact_payloads"],
+      "unevaluatedProperties": false
+    }
+  }
+}
