@@ -58,14 +58,17 @@ jobs:
             --contract-ir=tmp/dual-authority/positive/contract-ir.json \
             --quiet
           test -s tmp/dual-authority/positive/generated/typespec.generated.schema.json
+          test -s tmp/dual-authority/positive/contract-ir.json
           node <<'NODE'
           const fs = require('node:fs');
           const authored = JSON.parse(fs.readFileSync('dual-authority/authored.schema.json', 'utf8'));
           const generated = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/generated/typespec.generated.schema.json', 'utf8'));
           const report = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/report.json', 'utf8'));
+          const contractIr = JSON.parse(fs.readFileSync('tmp/dual-authority/positive/contract-ir.json', 'utf8'));
           if (authored.$schema !== 'https://json-schema.org/draft/2020-12/schema') process.exit(2);
           if (!generated || typeof generated !== 'object' || Array.isArray(generated)) process.exit(2);
           if (report.status !== 'passed') process.exit(2);
+          if (contractIr.status !== 'passed' || contractIr.admissible !== true) process.exit(2);
           NODE
       - name: Prove either authored authority drifting alone fails closed
         shell: bash
@@ -104,19 +107,36 @@ jobs:
             status=$?
             set -e
             test "$status" -eq 2
-            node - "$root/report.json" <<'NODE'
+            test -s "$root/generated/typespec.generated.schema.json"
+            test -s "$root/contract-ir.json"
+            node - "$root/report.json" "$root/contract-ir.json" "$root/generated/typespec.generated.schema.json" <<'NODE'
           const fs = require('node:fs');
           const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const contractIr = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const generated = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'));
           if (report.status !== 'stopped_for_evaluation') process.exit(2);
           if (!Array.isArray(report.findings) || report.findings.length === 0) process.exit(2);
+          if (contractIr.status !== 'stopped_for_evaluation' || contractIr.admissible !== false) process.exit(2);
+          if (!generated || typeof generated !== 'object' || Array.isArray(generated)) process.exit(2);
           NODE
           }
 
+          # TJSV negative control: TypeSpec-only drift-rejection.
           expect_parity_stop typespec-drift tmp/typespec-drift.tsp dual-authority/authored.schema.json
+          # TJSV negative control: JSON-Schema-only drift-rejection.
           expect_parity_stop json-schema-drift dual-authority/main.tsp tmp/schema-drift.json
+      - name: Prove Schema B remains comparison evidence outside authored tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e dual-authority/typespec.generated.schema.json
+          test ! -e dual-authority/generated.schema.json
+          test -s tmp/dual-authority/positive/generated/typespec.generated.schema.json
+          test -s tmp/dual-authority/typespec-drift/generated/typespec.generated.schema.json
+          test -s tmp/dual-authority/json-schema-drift/generated/typespec.generated.schema.json
       - name: Preserve authored inputs
         shell: bash
-        run: git diff --exit-code HEAD
+        run: git diff --exit-code HEAD -- dual-authority
       - name: Retain parity evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
