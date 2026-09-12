@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "OtelPolicyCanary": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OtelPolicyCanary",
+      "type": "object",
+      "properties": {
+        "version": { "type": "integer", "minimum": 1, "maximum": 1 },
+        "server": {
+          "type": "object",
+          "properties": {
+            "service_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "tracing": {
+              "type": "object",
+              "properties": {
+                "sample_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+                "propagators": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["sample_ratio", "propagators"],
+              "unevaluatedProperties": false
+            },
+            "exporter": {
+              "type": "object",
+              "properties": {
+                "protocol": { "type": "string", "minLength": 1, "maxLength": 32 },
+                "endpoint_env": { "type": "string", "minLength": 1, "maxLength": 128 }
+              },
+              "required": ["protocol", "endpoint_env"],
+              "unevaluatedProperties": false
+            }
+          },
+          "required": ["service_name", "tracing", "exporter"],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": ["version", "server"],
+      "unevaluatedProperties": false
+    }
+  }
+}
