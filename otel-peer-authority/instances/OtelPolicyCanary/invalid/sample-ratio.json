@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "server": {
+    "service_name": "otel-peer-canary",
+    "tracing": {
+      "sample_ratio": 1.5,
+      "propagators": ["tracecontext"]
+    },
+    "exporter": {
+      "protocol": "otlp_http",
+      "endpoint_env": "OTEL_CANARY_ENDPOINT"
+    }
+  }
+}

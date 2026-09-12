@@ -1,0 +1,97 @@
+name: OTel TypeSpec JSON Schema peer canary
+
+on:
+  pull_request:
+    paths:
+      - 'otel-peer-authority/**'
+      - '.github/workflows/otel-peer-authority.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'otel-peer-authority/**'
+      - '.github/workflows/otel-peer-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otel-peer-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  peer-authority:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ORES_OTEL_RUNTIME: ${{ github.workspace }}/tmp/ores-otel-runtime
+      OTEL_TJSV_REPORT: tmp/otel-peer/report.json
+      OTEL_TJSV_GENERATED: tmp/otel-peer/generated
+    steps:
+      - name: Check out exact canary head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+
+      - name: Verify exact canary head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Transpile TypeSpec to Schema B and compare with authored Schema A
+        uses: ORESoftware/typespec-json-schema-validator@5bab34e08856c47af3600adf40a4aa860fa71c01
+        with:
+          typespec: otel-peer-authority/main.tsp
+          schema: otel-peer-authority/authored.schema.json
+          instances: otel-peer-authority/instances
+          report: tmp/otel-peer/report.json
+          contract_ir: tmp/otel-peer/contract-ir.json
+          output_dir: tmp/otel-peer/generated
+          quiet: 'false'
+
+      - name: Verify parity receipt and generated Schema B evidence
+        run: node otel-peer-authority/verify-receipt.mjs
+
+      - name: Check out exact public ORES OTEL runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ores-otel/ores.otel.log
+          ref: 277aa47c7da94da921070f1e202574222b383f90
+          path: tmp/ores-otel-runtime
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Build exact public ORES OTEL runtime
+        working-directory: tmp/ores-otel-runtime
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '277aa47c7da94da921070f1e202574222b383f90'
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx tsc -p tsconfig.build.json
+
+      - name: Parse tracked TOML, compare admitted JSON, and execute runtime config
+        run: node otel-peer-authority/runtime-canary.mjs
+
+      - name: Prove all source authorities and fixtures stayed read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code HEAD
+          git -C tmp/ores-otel-runtime diff --exit-code HEAD
+
+      - name: Retain Schema B, parity receipt, Contract IR, and runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: otel-peer-authority-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/otel-peer/
+          if-no-files-found: error
+          retention-days: 30
