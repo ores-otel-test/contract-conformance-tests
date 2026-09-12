@@ -1,0 +1,79 @@
+name: ores-cli PR 211 exact-source certification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-cli-pr211-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-cli-pr211-cert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact test head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact test head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Check out exact ores-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-cli
+          ref: a7f8a20808e2280c54dcf9ffe05912a9b682e6bf
+          path: subject
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact ores-cli candidate
+        run: test "$(git -C subject rev-parse HEAD)" = 'a7f8a20808e2280c54dcf9ffe05912a9b682e6bf'
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.95.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.95.0 --path subject
+
+      - name: Format
+        working-directory: subject
+        run: cargo fmt --all --check
+
+      - name: Check all targets
+        working-directory: subject
+        run: cargo check --all-targets --locked
+
+      - name: Strict Clippy
+        working-directory: subject
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Full Rust test suite
+        working-directory: subject
+        run: cargo test --all-targets --locked
+
+      - name: Require bidirectional TJSV drift regressions to exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s subject/src/audit/tjsv_bidirectional_drift.rs
+          grep -q 'tjsv-bidirectional-drift-controls-missing' subject/src/audit/tjsv_bidirectional_drift.rs
+          grep -q 'TypeSpec' subject/src/audit/tjsv_bidirectional_drift.rs
+          grep -q 'JSON Schema' subject/src/audit/tjsv_bidirectional_drift.rs
+          grep -q 'comparison' subject/src/audit/tjsv_bidirectional_drift.rs
+
+      - name: Preserve exact source
+        run: git -C subject diff --exit-code -- .
