@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "service": "telemetry-canary",
+  "sample_per_mille": 1001,
+  "export_timeout_ms": 5000,
+  "redact_payloads": true
+}
