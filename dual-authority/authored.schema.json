@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ores.test-dual-authority.schema.json",
+  "$defs": {
+    "DualAuthorityContract": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "DualAuthorityContract",
+      "type": "object",
+      "properties": {
+        "supabaseRoot": { "type": "string" },
+        "neonRoot": { "type": "string" },
+        "secretPolicy": { "type": "string" },
+        "promotionPolicy": { "type": "string" }
+      },
+      "required": ["supabaseRoot", "neonRoot", "secretPolicy", "promotionPolicy"],
+      "unevaluatedProperties": false
+    }
+  }
+}
