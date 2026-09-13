@@ -1,0 +1,148 @@
+name: ores-cli code-to-TOML key exact-source certification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-cli-config-key-exact-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-cli-config-key-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out exact certification head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify certification identity
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ores-cli-config-key-exact-source.yml
+
+      - name: Check out exact ores-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-cli
+          ref: 73236bdc2a3f3c467914f0b47e991f8e1a6a551d
+          path: product
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind product and authored peer authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C product rev-parse HEAD)" = '73236bdc2a3f3c467914f0b47e991f8e1a6a551d'
+          test -f product/contracts/source-audit/main.tsp
+          test -f product/contracts/source-audit/authored.schema.json
+          grep -Fq 'https://json-schema.org/draft/2020-12/schema' product/contracts/source-audit/authored.schema.json
+          sha256sum product/contracts/source-audit/main.tsp product/contracts/source-audit/authored.schema.json > "$RUNNER_TEMP/authority-before.sha256"
+
+      - name: Install Rust 1.95
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt, clippy
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.16.0
+          package-manager-cache: false
+
+      - name: Exercise exact Rust syn adapter key extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.95.0 fmt --manifest-path product/tools/ast/rust/Cargo.toml -- --check
+          cargo +1.95.0 clippy --locked --manifest-path product/tools/ast/rust/Cargo.toml --all-targets -- -D warnings
+          cargo +1.95.0 run --quiet --locked --manifest-path product/tools/ast/rust/Cargo.toml -- \
+            --root product/tools/ast/fixtures/rust --format json > "$RUNNER_TEMP/rust.json"
+          jq -e '
+            (.files[] | select(.path == "keys.rs") | .astEvents) as $e |
+            ([$e[] | select(.kind == "config-key-read" and .value == "keys-fixture.toml#redis.url")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-read" and .value == "keys-fixture.toml#missing_required")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-read" and .value == "keys-fixture.toml#limits.max-entries")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-probe" and .value == "keys-fixture.toml#cache.ttl_seconds")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-probe" and .value == "keys-fixture.toml#limits.burst")] | length) == 1 and
+            ([$e[] | select((.value // "") | endswith("#not-config"))] | length) == 0
+          ' "$RUNNER_TEMP/rust.json" >/dev/null
+
+      - name: Exercise exact TypeScript ts-morph adapter key extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix product/tools/ast/typescript --ignore-scripts --no-audit --no-fund
+          git -C product diff --exit-code -- tools/ast/typescript/package-lock.json
+          node --check product/tools/ast/typescript/index.mjs
+          node product/tools/ast/typescript/index.mjs \
+            --root product/tools/ast/fixtures/typescript --format json > "$RUNNER_TEMP/typescript.json"
+          jq -e '
+            (.files[] | select(.path == "keys.ts") | .astEvents) as $e |
+            ([$e[] | select(.kind == "config-key-read" and .value == "keys-fixture.toml#redis.url")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-read" and .value == "keys-fixture.toml#missing_required")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-read" and .value == "keys-fixture.toml#limits.max-entries")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-probe" and .value == "keys-fixture.toml#cache.ttl_seconds")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-probe" and .value == "keys-fixture.toml#limits.burst")] | length) == 1 and
+            ([$e[] | select(.kind == "config-key-probe" and .value == "keys-fixture.toml#feature_flag")] | length) == 1 and
+            ([$e[] | select((.value // "") | endswith("#not-config"))] | length) == 0
+          ' "$RUNNER_TEMP/typescript.json" >/dev/null
+
+      - name: Execute product reconciliation regressions
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ores-cli-config-key-target
+        run: cargo +1.95.0 test --manifest-path product/Cargo.toml --locked --lib source_semantics -- --nocapture
+
+      - name: Check out exact canonical TJSV
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 07688e1eea92a666f7e8647038c9f2c1544440ed
+          path: .tjsv
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install canonical TJSV
+        run: npm ci --prefix .tjsv
+
+      - name: Transpile TypeSpec and compare with independent authored JSON Schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/source-audit-tjsv"
+          mkdir -p "$out/generated"
+          node .tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec product/contracts/source-audit/main.tsp \
+            --schema product/contracts/source-audit/authored.schema.json \
+            --instances product/contracts/source-audit/instances \
+            --output-dir "$out/generated" \
+            --report "$out/report.json" \
+            --contract-ir "$out/contract-ir.json" \
+            --quiet
+          jq -e '.status == "passed" and .zeroUnexplainedFindings == true and .authorities.precedence == "none"' "$out/report.json" >/dev/null
+          test -s "$out/generated/typespec.generated.schema.json"
+          test -s "$out/contract-ir.json"
+
+      - name: Prove both authored authorities and product checkout remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check "$RUNNER_TEMP/authority-before.sha256"
+          git -C product diff --exit-code -- .
+          git diff --check
