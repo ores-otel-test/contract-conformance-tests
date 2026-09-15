@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "status": "active",
+  "testOwner": {"login": "ores-otel-test", "id": 314791134, "type": "Organization"},
+  "productionOwner": {"login": "ores-otel", "id": 314791001, "type": "Organization"},
+  "governanceRepository": "ores-otel-test/.github",
+  "governancePath": "architecture/test-counterpart.json",
+  "scope": {"kind": "organization-current-tips", "includeArchived": false},
+  "policy": {"suffixInferenceAuthoritative": false, "bindExactDefaultBranchSha": true, "privateVisibilityFailsClosed": true}
+}
