@@ -1,0 +1,50 @@
+name: proof-desktop-trace-guard
+
+on:
+  push:
+    branches: [proof/desktop-trace-guard-68dba2a]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout proof harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Checkout exact desktop PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-otel/ores-otel-desktop-app.rs
+          ref: 68dba2a21c34ba80c8282f13f572a97f598fe922
+          path: consumer
+          persist-credentials: false
+
+      - name: Verify exact consumer head
+        working-directory: consumer
+        run: test "$(git rev-parse HEAD)" = 68dba2a21c34ba80c8282f13f572a97f598fe922
+
+      - name: Checkout canonical checker
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-otel/ores.otel.log
+          ref: 4bc592884286f47372b4488b96d105bf40ef2d11
+          path: checker
+          sparse-checkout: .github/ores-trace-contract.rs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Build and self-test canonical checker
+        run: |
+          rustc -O -o "$RUNNER_TEMP/ores-trace-contract" checker/.github/ores-trace-contract.rs
+          rustc --test -o "$RUNNER_TEMP/ores-trace-contract-test" checker/.github/ores-trace-contract.rs
+          "$RUNNER_TEMP/ores-trace-contract-test"
+
+      - name: Scan exact desktop PR head
+        run: "$RUNNER_TEMP/ores-trace-contract" consumer
